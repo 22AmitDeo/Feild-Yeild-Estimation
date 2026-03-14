@@ -1,0 +1,157 @@
+"""
+train_model.py - Full ML pipeline: train all models, evaluate, select best, save.
+
+Run with:
+    python src/train_model.py
+"""
+
+import os
+import sys
+
+import joblib
+import matplotlib.pyplot as plt
+import numpy as np
+import shap
+from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
+from sklearn.linear_model import Lasso, Ridge
+from sklearn.linear_model import LinearRegression
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+from xgboost import XGBRegressor
+
+# Allow imports from project root
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from src.data_loader import get_splits, load_data
+from src.evaluate_model import (
+    compute_metrics,
+    plot_correlation_heatmap,
+    plot_prediction_vs_actual,
+    plot_residuals,
+    save_metrics,
+)
+from src.feature_engineering import ENGINEERED_FEATURES, add_features
+
+MODEL_PATH = "models/yield_model.pkl"
+PLOTS_DIR = "results/plots"
+
+
+# ── Model definitions ────────────────────────────────────────────────────────
+
+def build_models() -> dict:
+    linear_pipe = lambda estimator: Pipeline([
+        ("scaler", StandardScaler()),
+        ("model", estimator),
+    ])
+    return {
+        "Linear Regression": linear_pipe(LinearRegression()),
+        "Ridge Regression": linear_pipe(Ridge(alpha=1.0)),
+        "Lasso Regression": linear_pipe(Lasso(alpha=1.0, max_iter=5000)),
+        "Random Forest": RandomForestRegressor(n_estimators=200, random_state=42, n_jobs=-1),
+        "Gradient Boosting": GradientBoostingRegressor(n_estimators=200, learning_rate=0.05, random_state=42),
+        "XGBoost": XGBRegressor(n_estimators=200, learning_rate=0.05, random_state=42,
+                                verbosity=0, n_jobs=-1),
+    }
+
+
+# ── Feature importance plot ───────────────────────────────────────────────────
+
+def plot_feature_importance(model, feature_names: list, model_name: str):
+    os.makedirs(PLOTS_DIR, exist_ok=True)
+
+    # Extract the underlying estimator if wrapped in a Pipeline
+    estimator = model.named_steps["model"] if hasattr(model, "named_steps") else model
+
+    if not hasattr(estimator, "feature_importances_"):
+        print(f"  [skip] {model_name} has no feature_importances_")
+        return
+
+    importances = estimator.feature_importances_
+    indices = np.argsort(importances)[::-1]
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.bar(range(len(importances)), importances[indices])
+    ax.set_xticks(range(len(importances)))
+    ax.set_xticklabels([feature_names[i] for i in indices], rotation=45, ha="right")
+    ax.set_title(f"Feature Importance — {model_name}")
+    ax.set_ylabel("Importance")
+    fig.tight_layout()
+    fig.savefig(f"{PLOTS_DIR}/feature_importance_{model_name.replace(' ', '_')}.png", dpi=150)
+    plt.close(fig)
+    print(f"Saved: feature_importance_{model_name}.png")
+
+
+# ── SHAP analysis ─────────────────────────────────────────────────────────────
+
+def run_shap(model, X_test, model_name: str):
+    os.makedirs(PLOTS_DIR, exist_ok=True)
+    try:
+        estimator = model.named_steps["model"] if hasattr(model, "named_steps") else model
+        explainer = shap.TreeExplainer(estimator)
+        shap_values = explainer.shap_values(X_test)
+
+        fig, ax = plt.subplots(figsize=(10, 6))
+        shap.summary_plot(shap_values, X_test, show=False)
+        plt.title(f"SHAP Summary — {model_name}")
+        plt.tight_layout()
+        plt.savefig(f"{PLOTS_DIR}/shap_summary_{model_name.replace(' ', '_')}.png",
+                    dpi=150, bbox_inches="tight")
+        plt.close()
+        print(f"Saved: shap_summary_{model_name}.png")
+    except Exception as e:
+        print(f"  [SHAP skip] {model_name}: {e}")
+
+
+# ── Main pipeline ─────────────────────────────────────────────────────────────
+
+def main():
+    print("=" * 60)
+    print("  Field Yield Estimation — Training Pipeline")
+    print("=" * 60)
+
+    # 1. Load & engineer features
+    df = load_data()
+    df_eng = add_features(df)
+    plot_correlation_heatmap(df_eng[ENGINEERED_FEATURES + ["yield"]])
+
+    X_train, X_test, y_train, y_test = get_splits(df_eng[ENGINEERED_FEATURES + ["yield"]])
+    X_train = X_train[ENGINEERED_FEATURES]
+    X_test = X_test[ENGINEERED_FEATURES]
+
+    # 2. Train & evaluate all models
+    models = build_models()
+    all_metrics = []
+    best_model, best_name, best_r2 = None, "", -np.inf
+
+    for name, model in models.items():
+        print(f"\nTraining: {name}")
+        model.fit(X_train, y_train)
+        y_pred = model.predict(X_test)
+
+        metrics = compute_metrics(y_test, y_pred, name)
+        all_metrics.append(metrics)
+        print(f"  R²={metrics['r2']}  RMSE={metrics['rmse']}  MAE={metrics['mae']}")
+
+        if metrics["r2"] > best_r2:
+            best_r2, best_model, best_name = metrics["r2"], model, name
+
+    # 3. Save metrics
+    save_metrics(all_metrics)
+
+    # 4. Best model plots
+    print(f"\nBest model: {best_name}  (R²={best_r2})")
+    y_pred_best = best_model.predict(X_test)
+    plot_prediction_vs_actual(y_test, y_pred_best, best_name)
+    plot_residuals(y_test, y_pred_best, best_name)
+    plot_feature_importance(best_model, ENGINEERED_FEATURES, best_name)
+    run_shap(best_model, X_test, best_name)
+
+    # 5. Save best model
+    os.makedirs("models", exist_ok=True)
+    joblib.dump({"model": best_model, "features": ENGINEERED_FEATURES}, MODEL_PATH)
+    print(f"\nModel saved to {MODEL_PATH}")
+    print("=" * 60)
+
+
+if __name__ == "__main__":
+    main()
