@@ -12,6 +12,7 @@ import joblib
 import matplotlib.pyplot as plt
 import numpy as np
 import shap
+import pandas as pd
 
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
@@ -178,6 +179,25 @@ def main():
     # 1️⃣ Load data
     df = load_data()
 
+    # 🔍 DEBUG DATA INSPECTION
+    print("\nDataset shape:", df.shape)
+    print("\nColumns:", df.columns.tolist())
+
+    print("\nFirst 5 rows:")
+    print(df.head())
+
+    print("\nData types:")
+    print(df.dtypes)
+
+    if "yield" in df.columns:
+        print("\nYield statistics:")
+        print(df["yield"].describe())
+
+        print("\nUnique yield values:", df["yield"].nunique())
+
+        print("\nCorrelation with yield:")
+        print(df.corr(numeric_only=True)["yield"].sort_values(ascending=False))
+
     # 2️⃣ Feature engineering
     df = add_features(df)
 
@@ -187,14 +207,13 @@ def main():
     # 3️⃣ Feature selection
     available_features = [f for f in ENGINEERED_FEATURES if f in df.columns]
 
-    print(f"Using {len(available_features)} features")
+    print(f"\nUsing {len(available_features)} features")
 
     # Correlation heatmap
     plot_correlation_heatmap(df[available_features + ["yield"]])
 
     # 4️⃣ Train-test split
     X = df[available_features]
-
     y = df["yield"]
 
     X_train, X_test, y_train, y_test = train_test_split(
