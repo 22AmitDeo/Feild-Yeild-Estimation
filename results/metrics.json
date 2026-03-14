@@ -1,0 +1,38 @@
+[
+  {
+    "model": "Linear Regression",
+    "r2": -0.0007,
+    "rmse": 435.4398,
+    "mae": 376.8937
+  },
+  {
+    "model": "Ridge Regression",
+    "r2": -0.0002,
+    "rmse": 435.3315,
+    "mae": 376.822
+  },
+  {
+    "model": "Lasso Regression",
+    "r2": -0.0,
+    "rmse": 435.2863,
+    "mae": 376.9208
+  },
+  {
+    "model": "Random Forest",
+    "r2": -0.0344,
+    "rmse": 442.7148,
+    "mae": 380.4763
+  },
+  {
+    "model": "Gradient Boosting",
+    "r2": -0.0085,
+    "rmse": 437.1416,
+    "mae": 377.6191
+  },
+  {
+    "model": "XGBoost",
+    "r2": -0.0473,
+    "rmse": 445.4696,
+    "mae": 383.1658
+  }
+]

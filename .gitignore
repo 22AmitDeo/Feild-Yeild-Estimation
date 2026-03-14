@@ -20,9 +20,6 @@ env/
 # Models (large binaries)
 models/*.pkl
 
-# Results
-results/plots/*.png
-results/metrics.json
 
 # IDE
 .vscode/
